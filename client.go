@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"time"
 
 	"golang.org/x/net/publicsuffix"
 )
@@ -19,14 +20,14 @@ type Client struct {
 }
 
 func (c *Client) setToken() error {
-	var rr RpcResponse
-	err := c.action("auth.login", fmt.Sprintf("\"%s\"", c.Password), &rr)
+	var res BoolResponse
+	err := c.action("auth.login", fmt.Sprintf("\"%s\"", c.Password), &res)
 
 	if err != nil {
 		return err
 	}
-	if !rr.Result {
-		return fmt.Errorf("error code %d! %s", rr.Error.Code, rr.Error.Message)
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error pausing torrent: %s", res.Error.Message)
 	}
 
 	return nil
@@ -42,6 +43,7 @@ func NewClient(c *Client) (*Client, error) {
 	c.user_agent = &http.Client{
 		Jar:       cookieJar,
 		Transport: tr,
+		Timeout:   time.Second * 10,
 	}
 
 	if c.API == "" {

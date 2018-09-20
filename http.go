@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 )
 
@@ -80,7 +81,11 @@ func (c *Client) action(method string, params string, decoder interface{}) error
 	header := make(http.Header)
 	header.Set("Content-Type", "application/json")
 	res, err := c.post("", []byte(payload), &header)
-	if err != nil {
+
+	//Deluge hangs if the action is invalid or hash doesnt match a torrent
+	if e, ok := err.(net.Error); ok && e.Timeout() {
+		return errors.New("request timed out. Check to make sure the action is valid for the speficied torrent")
+	} else if err != nil {
 		return err
 	}
 
@@ -93,8 +98,6 @@ func (c *Client) action(method string, params string, decoder interface{}) error
 	if err != nil {
 		return errors.New("unable to read response body")
 	}
-
-	//fmt.Printf("%v\n", body)
 
 	err = json.Unmarshal(body, &decoder)
 	if err != nil {

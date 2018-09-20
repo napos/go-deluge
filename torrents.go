@@ -1,10 +1,14 @@
 package deluge
 
 import (
+	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	//"io/ioutil"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
 type RpcError struct {
@@ -12,9 +16,15 @@ type RpcError struct {
 	Code    int    `json:"code"`
 }
 
-type RpcResponse struct {
+type BoolResponse struct {
 	Id     int      `json:"id"`
 	Result bool     `json:"result"`
+	Error  RpcError `json:"error"`
+}
+
+type StringResponse struct {
+	Id     int      `json:"id"`
+	Result string   `json:"result"`
 	Error  RpcError `json:"error"`
 }
 
@@ -123,7 +133,8 @@ func (torrents *TorrentsResponse) UnmarshalJSON(b []byte) error {
 // added to the deluge/Bittorrent server
 func (c *Client) GetTorrents() ([]Torrent, error) {
 	var torrents TorrentsResponse
-	err := c.action("core.get_torrents_status", fmt.Sprintf("{},[%s]", TorrentProperties), &torrents)
+	err := c.action("core.get_torrents_status", fmt.Sprintf("{},[%s]",
+		TorrentProperties), &torrents)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting torrents: %s", err.Error())
 	}
@@ -134,7 +145,8 @@ func (c *Client) GetTorrents() ([]Torrent, error) {
 // GetTorrent gets a specific torrent by info hash
 func (c *Client) GetTorrent(hash string) (Torrent, error) {
 	var torrent TorrentResponse
-	err := c.action("core.get_torrent_status", fmt.Sprintf("\"%s\",[%s]", hash, TorrentProperties), &torrent)
+	err := c.action("core.get_torrent_status", fmt.Sprintf("\"%s\",[%s]", hash,
+		TorrentProperties), &torrent)
 	if err != nil {
 		return Torrent{}, fmt.Errorf("Error getting torrents: %s", err.Error())
 	}
@@ -150,10 +162,13 @@ func (c *Client) GetTorrent(hash string) (Torrent, error) {
 
 // PauseTorrent pauses the torrent specified by info hash
 func (c *Client) PauseTorrent(hash string) error {
-	// err := c.action("pause", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.pause_torrent", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error pausing torrent: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error pausing torrent: %s", res.Error.Message)
 	}
 
 	return nil
@@ -161,10 +176,13 @@ func (c *Client) PauseTorrent(hash string) error {
 
 // UnPauseTorrent unpauses the torrent specified by info hash
 func (c *Client) UnPauseTorrent(hash string) error {
-	// err := c.action("unpause", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.resume_torrent", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
-		return fmt.Errorf("Error unpausing torrent: %s", err.Error())
+		return fmt.Errorf("Error resuming torrent: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error resuming torrent: %s", res.Error.Message)
 	}
 
 	return nil
@@ -172,32 +190,25 @@ func (c *Client) UnPauseTorrent(hash string) error {
 
 // StartTorrent starts the torrent specified by info hash
 func (c *Client) StartTorrent(hash string) error {
-	// err := c.action("start", hash, nil)
-	err := errors.New("TODO")
-	if err != nil {
-		return fmt.Errorf("Error starting torrent: %s", err.Error())
-	}
-
-	return nil
+	//Deluge has no concept of "Start/Stop" so mimicing using UnPause
+	return c.UnPauseTorrent(hash)
 }
 
 // StopTorrent stops the torrent specified by info hash
 func (c *Client) StopTorrent(hash string) error {
-	// err := c.action("stop", hash, nil)
-	err := errors.New("TODO")
-	if err != nil {
-		return fmt.Errorf("Error stopping torrent: %s", err.Error())
-	}
-
-	return nil
+	//Deluge has no concept of "Start/Stop" so mimicing using Pause
+	return c.PauseTorrent(hash)
 }
 
 // RecheckTorrent rechecks the torrent specified by info hash
 func (c *Client) RecheckTorrent(hash string) error {
-	// err := c.action("recheck", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.force_recheck", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error rechecking torrent: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error rechecking torrent: %s", res.Error.Message)
 	}
 
 	return nil
@@ -205,10 +216,13 @@ func (c *Client) RecheckTorrent(hash string) error {
 
 // RemoveTorrent removes the torrent specified by info hash
 func (c *Client) RemoveTorrent(hash string) error {
-	// err := c.action("remove", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.remove_torrent", fmt.Sprintf("\"%s\", false", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error removing torrent: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error removing torrent: %s", res.Error.Message)
 	}
 
 	return nil
@@ -216,10 +230,13 @@ func (c *Client) RemoveTorrent(hash string) error {
 
 // RemoveTorrentAndData removes the torrent and associated data specified by info hash
 func (c *Client) RemoveTorrentAndData(hash string) error {
-	// err := c.action("removedata", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.remove_torrent", fmt.Sprintf("\"%s\", true", hash), &res)
 	if err != nil {
-		return fmt.Errorf("Error removing torrent and data: %s", err.Error())
+		return fmt.Errorf("Error removing torrent: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error removing torrent: %s", res.Error.Message)
 	}
 
 	return nil
@@ -227,20 +244,40 @@ func (c *Client) RemoveTorrentAndData(hash string) error {
 
 // AddTorrent adds the torrent specified by url or magnet link
 func (c *Client) AddTorrent(url string) error {
-	err := errors.New("TODO")
-	// res, err := c.get(fmt.Sprintf("/?action=add-url&s=%s", url), nil)
+	var res StringResponse
+	err := c.action("core.add_torrent_magnet", fmt.Sprintf("\"%s\",{}", url), &res)
 	if err != nil {
-		return fmt.Errorf("Error adding torrent: %s", err)
+		return fmt.Errorf("Error adding torrent: %s", err.Error())
 	}
-	// if res.StatusCode != 200 {
-	// 	return fmt.Errorf("Error adding torrent: status code: %d", res.StatusCode)
-	// }
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error adding torrent: %s", res.Error.Message)
+	}
 
 	return nil
 }
 
 // AddTorrentFile adds the torrent specified by a file on disk
 func (c *Client) AddTorrentFile(torrentpath string) error {
+	f, err := os.Open(torrentpath)
+	defer f.Close()
+	if err != nil {
+		return fmt.Errorf("Error opening torrent file: %s", err.Error())
+	}
+	blob, err := ioutil.ReadAll(bufio.NewReader(f))
+	if err != nil {
+		return fmt.Errorf("Error reading torrent file: %s", err.Error())
+	}
+
+	var res StringResponse
+	err = c.action("core.add_torrent_file", fmt.Sprintf("\"%s\", \"%s\",{}",
+		filepath.Base(torrentpath), base64.StdEncoding.EncodeToString(blob)), &res)
+	if err != nil {
+		return fmt.Errorf("Error adding torrent: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error adding torrent: %s", res.Error.Message)
+	}
+
 	return nil
 }
 
@@ -248,7 +285,8 @@ func (c *Client) AddTorrentFile(torrentpath string) error {
 func (c *Client) SetTorrentProperty(hash string, property string, value string) error {
 	err := errors.New("TODO")
 	if err != nil {
-		return fmt.Errorf("Error setting torrent (%s) '%s' to '%s': %s ", hash, property, value, err)
+		return fmt.Errorf("Error setting torrent (%s) '%s' to '%s': %s ", hash,
+			property, value, err)
 	}
 
 	return nil
@@ -283,13 +321,8 @@ func (c *Client) SetTorrentSeedRatio(hash string, ratio float64) error {
 
 // SetTorrentSeedTime sets the seed time for the given torrent
 func (c *Client) SetTorrentSeedTime(hash string, time int) error {
-	// err := c.SetTorrentProperty(hash, "seed_override", "1")
-	err := errors.New("TODO")
-	if err != nil {
-		return err
-	}
-
-	// err = c.SetTorrentProperty(hash, "seed_time", strconv.FormatInt(int64(time*3600), 10))
+	//Deluge does not have a concept of stop after seeding for a specific time
+	err := errors.New("Not Implemented")
 	if err != nil {
 		return err
 	}
@@ -299,10 +332,13 @@ func (c *Client) SetTorrentSeedTime(hash string, time int) error {
 
 // QueueTop sends the torrent to the top of the download queue
 func (c *Client) QueueTop(hash string) error {
-	// err := c.action("queuetop", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.queue_top", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error setting torrent queue priority: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error setting torrent queue priority: %s", res.Error.Message)
 	}
 
 	return nil
@@ -310,10 +346,13 @@ func (c *Client) QueueTop(hash string) error {
 
 // QueueUp moves the torrent up the download queue
 func (c *Client) QueueUp(hash string) error {
-	// err := c.action("queueup", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.queue_up", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error setting torrent queue priority: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error setting torrent queue priority: %s", res.Error.Message)
 	}
 
 	return nil
@@ -321,10 +360,13 @@ func (c *Client) QueueUp(hash string) error {
 
 // QueueUp moves the torrent down the download queue
 func (c *Client) QueueDown(hash string) error {
-	// err := c.action("queuedown", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.queue_down", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error setting torrent queue priority: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error setting torrent queue priority: %s", res.Error.Message)
 	}
 
 	return nil
@@ -332,10 +374,13 @@ func (c *Client) QueueDown(hash string) error {
 
 // QueueTop sends the torrent to the bottom of the download queue
 func (c *Client) QueueBottom(hash string) error {
-	//err := c.action("queuebottom", hash, nil)
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.queue_bottom", fmt.Sprintf("[\"%s\"]", hash), &res)
 	if err != nil {
 		return fmt.Errorf("Error setting torrent queue priority: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error setting torrent queue priority: %s", res.Error.Message)
 	}
 
 	return nil
