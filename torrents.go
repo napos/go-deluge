@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type RpcError struct {
@@ -25,6 +26,12 @@ type BoolResponse struct {
 type StringResponse struct {
 	Id     int      `json:"id"`
 	Result string   `json:"result"`
+	Error  RpcError `json:"error"`
+}
+
+type ArrayResponse struct {
+	Id     int      `json:"id"`
+	Result []string `json:"result"`
 	Error  RpcError `json:"error"`
 }
 
@@ -76,12 +83,22 @@ type Torrent struct {
 	AddedRaw        float64 `json:"time_added"`
 }
 
-// max is a simple function used to bound the remaining value (as it can go negative)
+// max is used to bound the remaining value (as it can go negative)
 func max(a, b int) int {
 	if a > b {
 		return a
 	}
 	return b
+}
+
+// contains is used to determine if a label is contained in the labels slice
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
 
 // UnmarshallJSON is a custom unmarshaller for torrent lists. Necessary due to
@@ -281,23 +298,49 @@ func (c *Client) AddTorrentFile(torrentpath string) error {
 	return nil
 }
 
-// SetTorrentProperty sets a property for the given torrent.
-func (c *Client) SetTorrentProperty(hash string, property string, value string) error {
-	err := errors.New("TODO")
-	if err != nil {
-		return fmt.Errorf("Error setting torrent (%s) '%s' to '%s': %s ", hash,
-			property, value, err)
-	}
-
-	return nil
-}
-
 // SetTorrentLabel sets the label for the given torrent
 func (c *Client) SetTorrentLabel(hash string, label string) error {
-	// err := c.SetTorrentProperty(hash, "label", label)
-	err := errors.New("TODO")
+	//Deluge only accepts lowercase labels
+	label = strings.ToLower(label)
+
+	var plugins ArrayResponse
+	err := c.action("core.get_enabled_plugins", "", &plugins)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error getting enabled plugins: %s", err.Error())
+	}
+	if plugins.Error.Code != 0 {
+		return fmt.Errorf("Error getting enabled plugins: %s", plugins.Error.Message)
+	}
+
+	if !contains(plugins.Result, "Label") {
+		return fmt.Errorf("Label Plugin not detected - are you sure it is enabled?")
+	}
+
+	var res ArrayResponse
+	err = c.action("label.get_labels", "", &res)
+	if err != nil {
+		return fmt.Errorf("Error getting torrent labels: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error getting torrent labels: %s", res.Error.Message)
+	}
+
+	if !contains(res.Result, label) {
+		err = c.action("label.add", fmt.Sprintf("\"%s\"", label), &res)
+		if err != nil {
+			return fmt.Errorf("Error creating torrent label: %s", err.Error())
+		}
+		if res.Error.Code != 0 {
+			return fmt.Errorf("Error creating torrent label: %s", res.Error.Message)
+		}
+	}
+
+	err = c.action("label.set_torrent", fmt.Sprintf("\"%s\", \"%s\"", hash, label), &res)
+	if err != nil {
+		return fmt.Errorf("Error setting torrent label: %s", err.Error())
+	}
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error setting torrent label: %s", res.Error.Message)
 	}
 
 	return nil
@@ -305,15 +348,14 @@ func (c *Client) SetTorrentLabel(hash string, label string) error {
 
 // SetTorrentSeedRatio sets the seed ratio for the given torrent
 func (c *Client) SetTorrentSeedRatio(hash string, ratio float64) error {
-	// err := c.SetTorrentProperty(hash, "seed_override", "1")
-	err := errors.New("TODO")
+	var res BoolResponse
+	err := c.action("core.set_torrent_options",
+		fmt.Sprintf("[\"%s\"],{\"stop_at_ratio\": true, \"stop_ratio\": %f}", hash, ratio), &res)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error setting torrent queue priority: %s", err.Error())
 	}
-
-	// err = c.SetTorrentProperty(hash, "seed_ratio", strconv.FormatFloat(ratio*10, 'f', 0, 64))
-	if err != nil {
-		return err
+	if res.Error.Code != 0 {
+		return fmt.Errorf("Error setting torrent queue priority: %s", res.Error.Message)
 	}
 
 	return nil

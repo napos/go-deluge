@@ -17,6 +17,7 @@ type Client struct {
 
 	token      string
 	user_agent *http.Client
+	index      int
 }
 
 func (c *Client) setToken() error {
@@ -49,6 +50,8 @@ func NewClient(c *Client) (*Client, error) {
 	if c.API == "" {
 		c.API = "http://localhost:8112/json"
 	}
+
+	c.index = 1
 
 	err := c.setToken()
 	if err != nil {

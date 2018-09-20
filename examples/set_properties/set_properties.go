@@ -36,13 +36,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Setting torrent Seed Time..\n")
-	err = c.SetTorrentSeedTime("c3a41b13a4607f0b3188063aa5fb8a50e02ac4f5", 5)
-	if err != nil {
-		fmt.Printf("%s\n", err.Error())
-		os.Exit(1)
-	}
-
 	fmt.Printf("Setting torrent Seed Ratio..\n")
 	err = c.SetTorrentSeedRatio("c3a41b13a4607f0b3188063aa5fb8a50e02ac4f5", 5.2)
 	if err != nil {

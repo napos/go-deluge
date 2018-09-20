@@ -75,8 +75,8 @@ func (c *Client) delete(path string, headers *http.Header) (*http.Response, erro
 // }
 
 func (c *Client) action(method string, params string, decoder interface{}) error {
-	var payload = fmt.Sprintf(`{"id":%d, "method":"%s", "params":[%s]}`, 1, method, params)
-	fmt.Println(payload)
+	var payload = fmt.Sprintf(`{"id":%d, "method":"%s", "params":[%s]}`, c.index, method, params)
+	c.index++
 
 	header := make(http.Header)
 	header.Set("Content-Type", "application/json")

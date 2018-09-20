@@ -18,7 +18,7 @@ import (
 
 func main() {
 	c, err := deluge.NewClient(&deluge.Client{
-		API:      "http://localhost:8085/gui",
+		API:      "http://localhost:8112/json",
 		Username: "admin",
 		Password: os.Getenv("TORRENT_PASSWORD"),
 	})
